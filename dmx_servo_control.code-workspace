@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "..\\arduino_tests\\arduino_tests"
+		},
+		{
+			"name": "dmx_servo_control",
+			"path": "."
+		}
+	],
+	"settings": {}
+}
