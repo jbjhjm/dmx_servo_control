@@ -8,8 +8,11 @@ const int DmxDipPins[9] = 		{ 2,3,4,5,6,7,8,9,10 };
 Servo Servo1; 
 const int Servo1CtrlPin = 		13;
 const int Servo1DefaultPos =	0;
-const int Servo1MinPos = 		0;
-const int Servo1MaxPos = 		90;
+const uint8_t Servo1MinPos = 	0;
+const uint8_t Servo1MaxPos = 	180;
+
+const int HelperLedPin = 11;
+
 
 //  Can only use either Serial or DMXSerial!
 
@@ -20,6 +23,8 @@ void setup() {
 
   pinMode(Servo1CtrlPin, OUTPUT);	
   Servo1.attach(Servo1CtrlPin,500,2500);
+
+  pinMode(HelperLedPin, OUTPUT);
 
   pinMode(LED_BUILTIN, OUTPUT);
 
@@ -64,23 +69,29 @@ void printDipValues() {
 
 void loop() {
   // // Calculate how long no data packet was received
+//   digitalWrite(HelperLedPin,HIGH);
+//   delay(500);
+//   digitalWrite(HelperLedPin,LOW);
+//   delay(500);
   unsigned long lastPacket = DMXSerial.noDataSince();
   uint16_t DmxAddress = getDipAddress();
-//   printDipValues();
+// //   printDipValues();
   
-  Servo1.write(Servo1MaxPos);   
+//   Servo1.write(Servo1MaxPos);   
   
   if (lastPacket < DmxTimeoutMs) {
     uint8_t value = DMXSerial.read(DmxAddress);
     // option1: map DMX value range to range  Servo1MinPos Servo1MaxPos
     // value = map(value, 0, 255, Servo1MinPos, Servo1MaxPos);
     // option2: don't map to range, just jump between Min and Max Pos
-    value = (value>=128) ? Servo1MaxPos : Servo1MinPos;
-  	// Servo1.write(value);
-    digitalWrite(LED_BUILTIN, HIGH);
+	// uint8_t newServoPos = (value>=128) ? Servo1MaxPos : Servo1MinPos;
+	if(value>=128) Servo1.write(Servo1MaxPos);
+	else Servo1.write(Servo1MinPos);
+    digitalWrite(HelperLedPin, (value>=128) ? HIGH : LOW);
+    // digitalWrite(LED_BUILTIN, LOW);
   } else {
     // Send default value if no package has been received for 5+ seconds
   	Servo1.write(Servo1DefaultPos);
-    digitalWrite(LED_BUILTIN, LOW);
+    // digitalWrite(LED_BUILTIN, HIGH);
   }
 }
