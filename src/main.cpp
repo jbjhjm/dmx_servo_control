@@ -13,9 +13,11 @@ const uint8_t Servo1MaxPos = 	180;
 
 const unsigned long MOVING_TIME = 3000; // moving time is 3 seconds
 unsigned long moveStartTime;
-unsigned long lastServoPosition;
+unsigned long moveEndTime;
+unsigned long prevServoPosition;
 unsigned long targetServoPosition;
 int targetInputValue;
+float relativeTargetPosition;
 
 const int HelperLedPin = 11; // was only connected during breadboard development !?
 
@@ -30,8 +32,9 @@ void setup() {
   pinMode(Servo1CtrlPin, OUTPUT);	
   Servo1.attach(Servo1CtrlPin,500,2500);
 
-  pinMode(HelperLedPin, OUTPUT);
+  targetInputValue = -1; // make sure on first data receive targetInputValue and inputValue is different
 
+  pinMode(HelperLedPin, OUTPUT);
   pinMode(LED_BUILTIN, OUTPUT);
 
   for(int i = 0; i<9; i++){
@@ -73,24 +76,63 @@ void printDipValues() {
 //   Serial.print("\r\n");
 }
 
-void loop() {
-  // // Calculate how long no data packet was received
-//   digitalWrite(HelperLedPin,HIGH);
-//   delay(500);
-//   digitalWrite(HelperLedPin,LOW);
-//   delay(500);
-  unsigned long lastPacket = DMXSerial.noDataSince();
-  uint16_t DmxAddress = getDipAddress();
-// //   printDipValues();
-  
-//   Servo1.write(Servo1MaxPos);  
+float floatmap(float x, float in_min, float in_max, float out_min, float out_max)
+{
+  return ((float)x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
 
-/**
- *  HelperLedPin will only light up if DMX signal fails.
- *  LED_BUILTIN will light up if DMX signal is > 126 
- */
+void beginMovement(uint8_t inputValue) {
+	// changed target value
+	unsigned long now = millis();
+	targetInputValue = inputValue;
+
+	if (now <= moveEndTime) {
+		// target is being updated while still interpolating
+		// need to calculate the current servo position
+		prevServoPosition = map(now, moveStartTime, moveEndTime, prevServoPosition, targetServoPosition);
+	} else {
+		// no interpolation running, we can assume targetServoPosition is current position
+		prevServoPosition = targetServoPosition;
+	}
+
+
+	// A/B position
+	// targetServoPosition = (targetInputValue>=128) ? Servo1MaxPos : Servo1MinPos;
+	// moveEndTime = now + MOVING_TIME;
+
+	// interpolated position
+	// force float types, else relativeTargetPosition will always become 0.0!
+	float prevRelativeTargetPosition = relativeTargetPosition;
+	relativeTargetPosition = (float)targetInputValue / (float)255.0; 
+	// map relativeTargetPosition between Servo1 Min & Max Position
+	targetServoPosition =  Servo1MinPos + (relativeTargetPosition * (Servo1MaxPos-Servo1MinPos));
+
+	// calculate interpolation time / speed
+	// percentage of movement distance compared to Min/Max position range
+	float movementDistanceRelative = abs(relativeTargetPosition - prevRelativeTargetPosition);
+	moveStartTime = now;
+	moveEndTime = moveStartTime + (movementDistanceRelative * MOVING_TIME);
+}
+
+
+void loop() {
+	// Calculate how long no data packet was received
+	// digitalWrite(HelperLedPin,HIGH);
+	// delay(500);
+	// digitalWrite(HelperLedPin,LOW);
+	// delay(500);
+	// printDipValues();
+
+	/**
+	 * Receive DMX or use default value
+	 *  HelperLedPin will only light up if DMX signal fails.
+	 *  LED_BUILTIN will light up if DMX signal is > 126 
+	 */
   
 	uint8_t inputValue;
+	unsigned long lastPacket = DMXSerial.noDataSince();
+	uint16_t DmxAddress = getDipAddress();
+
 	if (lastPacket < DmxTimeoutMs) { 
 		inputValue = DMXSerial.read(DmxAddress);
 		digitalWrite(HelperLedPin,LOW);
@@ -101,31 +143,24 @@ void loop() {
 		// digitalWrite(LED_BUILTIN, LOW);
 	}
 
+	// calculate movement if change was detected
 	if(inputValue != targetInputValue) {
-		// changed target value
-		moveStartTime = millis();
-		targetInputValue = inputValue;
-		lastServoPosition = targetServoPosition;
-		targetServoPosition = (targetInputValue>=128) ? Servo1MaxPos : Servo1MinPos;
+		beginMovement(inputValue);
 	}
 	
-	// interp to target value
-	// option1: map DMX value range to range  Servo1MinPos Servo1MaxPos
-	// value = map(value, 0, 255, Servo1MinPos, Servo1MaxPos);
-	// option2: don't map to range, just jump between Min and Max Pos
-	// uint8_t newServoPos = (value>=128) ? Servo1MaxPos : Servo1MinPos;
-	unsigned long progress = millis() - moveStartTime;
-	if (progress <= MOVING_TIME) {
+	// interpolate to target value
+	if (millis() <= moveEndTime) {
 		// move has not finished yet
-		long interpPos = map(progress, 0, MOVING_TIME, lastServoPosition, targetServoPosition);
+		long interpPos = map(millis(), moveStartTime, moveEndTime, prevServoPosition, targetServoPosition);
 		Servo1.write(interpPos); 
+		digitalWrite(LED_BUILTIN,HIGH);
+	} else {
+		// commented out to be 100% sure servo will never receive immedate target value that was not interpolated
+		// Servo1.write(targetServoPosition); 
+		digitalWrite(LED_BUILTIN,LOW);
 	}
 
-	if(targetInputValue>=128) digitalWrite(LED_BUILTIN,HIGH);
-	else digitalWrite(LED_BUILTIN,LOW);
-
-	// digitalWrite(LED_BUILTIN, LOW);
-
-
+	// if(targetServoPosition>0.0) digitalWrite(LED_BUILTIN,HIGH);
+	// else digitalWrite(LED_BUILTIN,LOW);
 
 }
