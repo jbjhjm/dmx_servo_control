@@ -8,10 +8,10 @@ const int DmxDipPins[9] = 		{ 2,3,4,5,6,7,8,9,10 };
 Servo Servo1; 
 const int Servo1CtrlPin = 		12; // 12 so that 13 is free for using onboard debug LED hardwired to 13
 const int Servo1DefaultPos =	0;
-const uint8_t Servo1MinPos = 	100;
+const uint8_t Servo1MinPos = 	106;
 const uint8_t Servo1MaxPos = 	0;
 
-const unsigned long MOVING_TIME = 1500; // moving time is 3 seconds
+const unsigned long MOVING_TIME = 1000; // moving time is 3 seconds
 unsigned long moveStartTime;
 unsigned long moveEndTime;
 unsigned long prevServoPosition;
