@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <Servo.h>
+//  Can only use either Serial or DMXSerial!
 #include <DMXSerial.h>
 
 const int DmxTimeoutMs = 		5000;
@@ -7,8 +8,8 @@ const int DmxDipPins[9] = 		{ 2,3,4,5,6,7,8,9,10 };
 
 Servo Servo1; 
 const int Servo1CtrlPin = 		12; // 12 so that 13 is free for using onboard debug LED hardwired to 13
-const int Servo1DefaultPos =	0;
-const uint8_t Servo1MinPos = 	106;
+const int Servo1DefaultPos =	0; // this is being passed as if it was an incoming DMX value!
+const uint8_t Servo1MinPos = 	90;
 const uint8_t Servo1MaxPos = 	0;
 
 const unsigned long MOVING_TIME = 1000; // moving time is 3 seconds
@@ -27,7 +28,7 @@ const int HelperLedPin = 11; // was only connected during breadboard development
 void setup() {
 //   Serial.begin(9600);
   DMXSerial.init(DMXReceiver);
-  DMXSerial.write(Servo1CtrlPin, Servo1DefaultPos);
+//   DMXSerial.write(Servo1CtrlPin, Servo1DefaultPos);
 
   pinMode(Servo1CtrlPin, OUTPUT);	
   Servo1.attach(Servo1CtrlPin,500,2500);
@@ -81,6 +82,60 @@ float floatmap(float x, float in_min, float in_max, float out_min, float out_max
   return ((float)x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
+// TODO: planNextMovement is update of beginMovement, but it seems there is some bug.
+// Reverted code to use original beginMovement function for now.
+
+void planNextMovement(uint8_t inputValue) {
+	// changed target value
+	unsigned long now = millis();
+	targetInputValue = inputValue;
+	relativeTargetPosition = (float)targetInputValue / (float)255.0; 
+
+	if (now <= moveEndTime) {
+		// target is being updated while still interpolating
+		// need to calculate the current servo position
+		prevServoPosition = map(now, moveStartTime, moveEndTime, prevServoPosition, targetServoPosition);
+	} else {
+		// no interpolation running, we can assume targetServoPosition is current position
+		prevServoPosition = targetServoPosition;
+	}
+
+	// interpolated position
+	// force float types, else relativeTargetPosition will always become 0.0!
+	float prevRelativeTargetPosition = relativeTargetPosition;
+	// map relativeTargetPosition between Servo1 Min & Max Position
+	targetServoPosition =  Servo1MinPos + (relativeTargetPosition * (Servo1MaxPos-Servo1MinPos));
+
+	// calculate interpolation time / speed
+	// percentage of movement distance compared to Min/Max position range
+	float movementDistanceRelative = abs(relativeTargetPosition - prevRelativeTargetPosition);
+	moveStartTime = now;
+	moveEndTime = moveStartTime + (movementDistanceRelative * MOVING_TIME);
+}
+
+void planNextMovementAB(uint8_t inputValue) {
+	// changed target value
+	unsigned long now = millis();
+	targetInputValue = inputValue;
+	relativeTargetPosition = (float)targetInputValue / (float)255.0; 
+
+	if (now <= moveEndTime) {
+		// target is being updated while still interpolating
+		// need to calculate the current servo position
+		prevServoPosition = map(now, moveStartTime, moveEndTime, prevServoPosition, targetServoPosition);
+	} else {
+		// no interpolation running, we can assume targetServoPosition is current position
+		prevServoPosition = targetServoPosition;
+	}
+
+	// A/B position
+	bool targetIsMax = ((float)targetInputValue / (float)255.0) > 0.5; 
+	targetServoPosition = targetIsMax ? Servo1MaxPos : Servo1MinPos;
+	moveStartTime = now;
+	moveEndTime = now + MOVING_TIME;
+}
+
+
 void beginMovement(uint8_t inputValue) {
 	// changed target value
 	unsigned long now = millis();
@@ -120,8 +175,6 @@ void loop() {
 	// digitalWrite(HelperLedPin,HIGH);
 	// delay(500);
 	// digitalWrite(HelperLedPin,LOW);
-	// delay(500);
-	// printDipValues();
 
 	/**
 	 * Receive DMX or use default value
@@ -133,6 +186,8 @@ void loop() {
 	unsigned long lastPacket = DMXSerial.noDataSince();
 	uint16_t DmxAddress = getDipAddress();
 
+	printDipValues();
+
 	if (lastPacket < DmxTimeoutMs) { 
 		inputValue = DMXSerial.read(DmxAddress);
 		digitalWrite(HelperLedPin,LOW);
@@ -141,6 +196,12 @@ void loop() {
 		inputValue = Servo1DefaultPos;
 		digitalWrite(HelperLedPin,HIGH);
 		// digitalWrite(LED_BUILTIN, LOW);
+	}
+
+	if(inputValue > 1) {
+		digitalWrite(LED_BUILTIN,HIGH);
+	} else {
+		digitalWrite(LED_BUILTIN,LOW);
 	}
 
 	// calculate movement if change was detected
@@ -153,11 +214,11 @@ void loop() {
 		// move has not finished yet
 		long interpPos = map(millis(), moveStartTime, moveEndTime, prevServoPosition, targetServoPosition);
 		Servo1.write(interpPos); 
-		digitalWrite(LED_BUILTIN,HIGH);
+		// digitalWrite(LED_BUILTIN,HIGH);
 	} else {
 		// commented out to be 100% sure servo will never receive immedate target value that was not interpolated
 		// Servo1.write(targetServoPosition); 
-		digitalWrite(LED_BUILTIN,LOW);
+		// digitalWrite(LED_BUILTIN,LOW);
 	}
 
 	// if(targetServoPosition>0.0) digitalWrite(LED_BUILTIN,HIGH);
